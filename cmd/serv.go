@@ -103,12 +103,12 @@ func fail(ctx context.Context, userMessage, logMsgFmt string, args ...any) error
 	// There appears to be a chance to cause a zombie process and failure to read the Exit status
 	// if nothing is outputted on stdout.
 	_, _ = fmt.Fprintln(os.Stdout, "")
-	_, _ = fmt.Fprintln(os.Stderr, "Gitea:", userMessage)
+	_, _ = fmt.Fprintln(os.Stderr, userMessage)
 
 	if logMsgFmt != "" {
 		logMsg := fmt.Sprintf(logMsgFmt, args...)
 		if !setting.IsProd {
-			_, _ = fmt.Fprintln(os.Stderr, "Gitea:", logMsg)
+			_, _ = fmt.Fprintln(os.Stderr, logMsg)
 		}
 		if userMessage != "" {
 			if unicode.IsPunct(rune(userMessage[len(userMessage)-1])) {
@@ -143,7 +143,7 @@ func runServ(c *cli.Context) error {
 	setup(ctx, c.Bool("debug"))
 
 	if setting.SSH.Disabled {
-		println("Gitea: SSH has been disabled")
+		println("SSH has been disabled")
 		return nil
 	}
 
