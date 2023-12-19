@@ -6,6 +6,7 @@ package utils
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"code.gitea.io/gitea/models/db"
@@ -164,13 +165,20 @@ func addHook(ctx *context.APIContext, form *api.CreateHookOption, ownerID, repoI
 	if len(form.Events) == 0 {
 		form.Events = []string{"push"}
 	}
+
+	isSystemWebhook, err := strconv.ParseBool(form.Config["is_system_webhook"])
+	if err != nil {
+		ctx.Error(http.StatusUnprocessableEntity, "", "Invalid is_system_webhook value")
+		return nil, false
+	}
 	w := &webhook.Webhook{
-		OwnerID:     ownerID,
-		RepoID:      repoID,
-		URL:         form.Config["url"],
-		ContentType: webhook.ToHookContentType(form.Config["content_type"]),
-		Secret:      form.Config["secret"],
-		HTTPMethod:  "POST",
+		OwnerID:         ownerID,
+		RepoID:          repoID,
+		URL:             form.Config["url"],
+		ContentType:     webhook.ToHookContentType(form.Config["content_type"]),
+		Secret:          form.Config["secret"],
+		HTTPMethod:      "POST",
+		IsSystemWebhook: isSystemWebhook,
 		HookEvent: &webhook_module.HookEvent{
 			ChooseEvents: true,
 			HookEvents: webhook_module.HookEvents{
@@ -200,7 +208,7 @@ func addHook(ctx *context.APIContext, form *api.CreateHookOption, ownerID, repoI
 		IsActive: form.Active,
 		Type:     form.Type,
 	}
-	err := w.SetHeaderAuthorization(form.AuthorizationHeader)
+	err = w.SetHeaderAuthorization(form.AuthorizationHeader)
 	if err != nil {
 		ctx.Error(http.StatusInternalServerError, "SetHeaderAuthorization", err)
 		return nil, false
