@@ -6,6 +6,8 @@ package repo
 import (
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/context"
@@ -27,7 +29,7 @@ func GetDirInfos(ctx *context.APIContext) {
 		return
 	}
 	path := ctx.Req.URL.Query().Get("path")
-	entries, err := getDirectoryEntries(ctx, path)
+	entries, err := getDirectoryEntries(ctx, branch, path)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, "failed to get directry entries, error: "+err.Error())
 		return
@@ -35,7 +37,7 @@ func GetDirInfos(ctx *context.APIContext) {
 	ctx.JSON(http.StatusOK, entries)
 }
 
-func getDirectoryEntries(ctx *context.APIContext, folder string) ([]structs.GitEntry, error) {
+func getDirectoryEntries(ctx *context.APIContext, branch, folder string) ([]structs.GitEntry, error) {
 	tree, err := ctx.Repo.Commit.SubTree(folder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec SubTree, cause:%w", err)
@@ -52,9 +54,9 @@ func getDirectoryEntries(ctx *context.APIContext, folder string) ([]structs.GitE
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec GetCommitsInfo, cause:%w", err)
 	}
+
 	var ges = make([]structs.GitEntry, 0, len(commits))
 	for _, c := range commits {
-
 		e := structs.GitEntry{
 			Name:          c.Entry.Name(),
 			Path:          folder + "/" + c.Entry.Name(),
@@ -62,10 +64,11 @@ func getDirectoryEntries(ctx *context.APIContext, folder string) ([]structs.GitE
 			Type:          c.Entry.Type(),
 			Size:          c.Entry.Size(),
 			SHA:           c.Commit.ID.String(),
-			URL:           "",
 			CommitMsg:     c.Commit.CommitMessage,
 			CommitterDate: c.Commit.Committer.When,
 		}
+		e.URL = ctx.Repo.Repository.HTMLURL() + "/raw/branch/" + url.PathEscape(branch) + "/" + url.PathEscape(strings.TrimPrefix(e.Path, "/"))
+		e.DownloadUrl = e.URL
 		//lfs pointer size is less than 1024
 		if c.Entry.Size() <= 1024 {
 			content, _ := c.Entry.Blob().GetBlobContent(1024)
@@ -73,6 +76,8 @@ func getDirectoryEntries(ctx *context.APIContext, folder string) ([]structs.GitE
 			if p.IsValid() {
 				e.Size = p.Size
 				e.IsLfs = true
+				e.LfsRelativePath = p.RelativePath()
+				e.DownloadUrl = ctx.Repo.Repository.HTMLURL() + "/media/branch/" + url.PathEscape(branch) + "/" + url.PathEscape(strings.TrimPrefix(e.Path, "/"))
 			}
 		}
 		ges = append(ges, e)
