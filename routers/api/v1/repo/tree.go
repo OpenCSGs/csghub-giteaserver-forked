@@ -4,11 +4,80 @@
 package repo
 
 import (
+	"fmt"
 	"net/http"
 
+	"code.gitea.io/gitea/modules/base"
 	"code.gitea.io/gitea/modules/context"
+	"code.gitea.io/gitea/modules/git"
+	"code.gitea.io/gitea/modules/lfs"
+	"code.gitea.io/gitea/modules/structs"
 	files_service "code.gitea.io/gitea/services/repository/files"
 )
+
+func GetDirInfos(ctx *context.APIContext) {
+	var err error
+	branch := ctx.Req.URL.Query().Get("branch")
+	if len(branch) == 0 {
+		branch = "main"
+	}
+	ctx.Repo.Commit, err = ctx.Repo.GitRepo.GetBranchCommit(branch)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, "failed to get branch commit, error: "+err.Error())
+		return
+	}
+	path := ctx.Req.URL.Query().Get("path")
+	entries, err := getDirectoryEntries(ctx, path)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, "failed to get directry entries, error: "+err.Error())
+		return
+	}
+	ctx.JSON(http.StatusOK, entries)
+}
+
+func getDirectoryEntries(ctx *context.APIContext, folder string) ([]structs.GitEntry, error) {
+	tree, err := ctx.Repo.Commit.SubTree(folder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec SubTree, cause:%w", err)
+	}
+
+	allEntries, err := tree.ListEntries()
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec ListEntries, cause:%w", err)
+	}
+	allEntries.CustomSort(base.NaturalSortLess)
+
+	var commits []git.CommitInfo
+	commits, _, err = allEntries.GetCommitsInfo(ctx, ctx.Repo.Commit, folder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to exec GetCommitsInfo, cause:%w", err)
+	}
+	var ges = make([]structs.GitEntry, 0, len(commits))
+	for _, c := range commits {
+
+		e := structs.GitEntry{
+			Path:      c.Entry.Name(),
+			Mode:      c.Entry.Mode().String(),
+			Type:      c.Entry.Type(),
+			Size:      c.Entry.Size(),
+			SHA:       c.Commit.ID.String(),
+			URL:       "",
+			CommitMsg: c.Commit.CommitMessage,
+		}
+		//lfs pointer size is less than 1024
+		if c.Entry.Size() <= 1024 {
+			content, _ := c.Entry.Blob().GetBlobContent(1024)
+			p, _ := lfs.ReadPointerFromBuffer([]byte(content))
+			if p.IsValid() {
+				e.Size = p.Size
+				e.IsLfs = true
+			}
+		}
+		ges = append(ges, e)
+	}
+
+	return ges, nil
+}
 
 // GetTree get the tree of a repository.
 func GetTree(ctx *context.APIContext) {
