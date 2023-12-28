@@ -56,13 +56,15 @@ func getDirectoryEntries(ctx *context.APIContext, folder string) ([]structs.GitE
 	for _, c := range commits {
 
 		e := structs.GitEntry{
-			Path:      c.Entry.Name(),
-			Mode:      c.Entry.Mode().String(),
-			Type:      c.Entry.Type(),
-			Size:      c.Entry.Size(),
-			SHA:       c.Commit.ID.String(),
-			URL:       "",
-			CommitMsg: c.Commit.CommitMessage,
+			Name:          c.Entry.Name(),
+			Path:          folder + "/" + c.Entry.Name(),
+			Mode:          c.Entry.Mode().String(),
+			Type:          c.Entry.Type(),
+			Size:          c.Entry.Size(),
+			SHA:           c.Commit.ID.String(),
+			URL:           "",
+			CommitMsg:     c.Commit.CommitMessage,
+			CommitterDate: c.Commit.Committer.When,
 		}
 		//lfs pointer size is less than 1024
 		if c.Entry.Size() <= 1024 {
