@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"code.gitea.io/gitea/modules/base"
@@ -37,29 +38,53 @@ func GetDirInfos(ctx *context.APIContext) {
 	ctx.JSON(http.StatusOK, entries)
 }
 
-func getDirectoryEntries(ctx *context.APIContext, branch, folder string) ([]structs.GitEntry, error) {
-	tree, err := ctx.Repo.Commit.SubTree(folder)
+func getDirectoryEntries(ctx *context.APIContext, branch, path string) ([]structs.GitEntry, error) {
+	var (
+		allEntries git.Entries
+		commits    []git.CommitInfo
+	)
+	entry, err := ctx.Repo.Commit.GetTreeEntryByPath(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to exec SubTree, cause:%w", err)
+		return nil, err
 	}
 
-	allEntries, err := tree.ListEntries()
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec ListEntries, cause:%w", err)
-	}
-	allEntries.CustomSort(base.NaturalSortLess)
+	if entry.Type() != "tree" {
+		allEntries = append(allEntries, entry)
+		commit, err := ctx.Repo.Commit.GetCommitByPath(path)
+		if err != nil {
+			return nil, err
+		}
 
-	var commits []git.CommitInfo
-	commits, _, err = allEntries.GetCommitsInfo(ctx, ctx.Repo.Commit, folder)
-	if err != nil {
-		return nil, fmt.Errorf("failed to exec GetCommitsInfo, cause:%w", err)
+		commitInfo := git.CommitInfo{
+			Entry:  entry,
+			Commit: commit,
+		}
+		commits = append(commits, commitInfo)
+		path = filepath.Dir(path)
+
+	} else {
+		tree, err := ctx.Repo.Commit.SubTree(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exec SubTree, cause:%w", err)
+		}
+
+		allEntries, err := tree.ListEntries()
+		if err != nil {
+			return nil, fmt.Errorf("failed to exec ListEntries, cause:%w", err)
+		}
+		allEntries.CustomSort(base.NaturalSortLess)
+
+		commits, _, err = allEntries.GetCommitsInfo(ctx, ctx.Repo.Commit, path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exec GetCommitsInfo, cause:%w", err)
+		}
 	}
 
 	var ges = make([]structs.GitEntry, 0, len(commits))
 	for _, c := range commits {
 		e := structs.GitEntry{
 			Name:          c.Entry.Name(),
-			Path:          folder + "/" + c.Entry.Name(),
+			Path:          filepath.Join(path, c.Entry.Name()),
 			Mode:          c.Entry.Mode().String(),
 			Type:          c.Entry.Type(),
 			Size:          c.Entry.Size(),
