@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"code.gitea.io/gitea/modules/base"
@@ -59,6 +60,7 @@ func getDirectoryEntries(ctx *context.APIContext, branch, path string) ([]struct
 			Commit: commit,
 		}
 		commits = append(commits, commitInfo)
+		path = filepath.Dir(path)
 
 	} else {
 		tree, err := ctx.Repo.Commit.SubTree(path)
@@ -82,7 +84,7 @@ func getDirectoryEntries(ctx *context.APIContext, branch, path string) ([]struct
 	for _, c := range commits {
 		e := structs.GitEntry{
 			Name:          c.Entry.Name(),
-			Path:          path + "/" + c.Entry.Name(),
+			Path:          filepath.Join(path, c.Entry.Name()),
 			Mode:          c.Entry.Mode().String(),
 			Type:          c.Entry.Type(),
 			Size:          c.Entry.Size(),
