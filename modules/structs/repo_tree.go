@@ -19,6 +19,7 @@ type GitEntry struct {
 	IsLfs           bool      `json:"is_lfs"`
 	LfsRelativePath string    `json:"lfs_relative_path"`
 	DownloadUrl     string    `json:"download_url"`
+	LastCommitSHA   string    `json:"last_commit_sha"`
 }
 
 // GitTreeResponse returns a git tree
