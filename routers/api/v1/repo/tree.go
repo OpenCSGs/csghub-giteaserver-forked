@@ -88,9 +88,10 @@ func getDirectoryEntries(ctx *context.APIContext, branch, path string) ([]struct
 			Mode:          c.Entry.Mode().String(),
 			Type:          c.Entry.Type(),
 			Size:          c.Entry.Size(),
-			SHA:           c.Commit.ID.String(),
+			SHA:           c.Entry.ID.String(),
 			CommitMsg:     c.Commit.CommitMessage,
 			CommitterDate: c.Commit.Committer.When,
+			LastCommitSHA: c.Commit.ID.String(),
 		}
 		e.URL = ctx.Repo.Repository.HTMLURL() + "/raw/branch/" + url.PathEscape(branch) + "/" + url.PathEscape(strings.TrimPrefix(e.Path, "/"))
 		e.DownloadUrl = e.URL
