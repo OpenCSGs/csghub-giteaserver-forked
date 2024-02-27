@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"code.gitea.io/gitea/models"
 	asymkey_model "code.gitea.io/gitea/models/asymkey"
@@ -20,6 +21,7 @@ import (
 	"code.gitea.io/gitea/modules/git"
 	"code.gitea.io/gitea/modules/log"
 	"code.gitea.io/gitea/modules/private"
+	"code.gitea.io/gitea/modules/setting"
 	"code.gitea.io/gitea/modules/web"
 	pull_service "code.gitea.io/gitea/services/pull"
 )
@@ -116,6 +118,8 @@ func HookPreReceive(ctx *gitea_context.PrivateContext) {
 		oldCommitID := opts.OldCommitIDs[i]
 		newCommitID := opts.NewCommitIDs[i]
 		refFullName := opts.RefFullNames[i]
+
+		checkFileSize(ourCtx, oldCommitID, newCommitID, generateGitEnv(opts))
 
 		switch {
 		case refFullName.IsBranch():
@@ -521,4 +525,29 @@ func (ctx *preReceiveContext) loadPusherAndPermission() bool {
 
 	ctx.loadedPusher = true
 	return true
+}
+
+func checkFileSize(ctx *preReceiveContext, oldCommitID, newCommitID string, env []string) {
+	if setting.Repository.MaxNonLfsFileSize == -1 {
+		return
+	}
+	affectedFiles, err := git.GetChangesFiles(ctx.Repo.GitRepo, oldCommitID, newCommitID, env)
+	if err != nil {
+		return
+	}
+	for _, change := range affectedFiles {
+		fileName := change[2:]
+		if strings.HasPrefix(change, "A\t") || strings.HasPrefix(change, "M\t") {
+			fileSize, err := git.GetFileSize(ctx.Repo.GitRepo, newCommitID, fileName, env)
+			if err != nil {
+				return
+			}
+			if fileSize > setting.Repository.MaxNonLfsFileSize {
+				ctx.JSON(http.StatusRequestEntityTooLarge, private.Response{
+					UserMsg: fmt.Sprintf("The size of the file %s exceeds %d bytes.", fileName, setting.Repository.MaxNonLfsFileSize),
+				})
+				return
+			}
+		}
+	}
 }

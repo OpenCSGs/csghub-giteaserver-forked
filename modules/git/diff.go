@@ -315,3 +315,93 @@ func GetAffectedFiles(repo *Repository, oldCommitID, newCommitID string, env []s
 
 	return affectedFiles, err
 }
+
+func GetChangesFiles(repo *Repository, oldCommitID, newCommitID string, env []string) ([]string, error) {
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		log.Error("Unable to create os.Pipe for %s", repo.Path)
+		return nil, err
+	}
+	defer func() {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+	}()
+
+	affectedFiles := make([]string, 0, 32)
+
+	// Run `git diff --name-status` to get the status of the changed files
+	err = NewCommand(repo.Ctx, "diff", "--name-status").AddDynamicArguments(oldCommitID, newCommitID).
+		Run(&RunOpts{
+			Env:    env,
+			Dir:    repo.Path,
+			Stdout: stdoutWriter,
+			PipelineFunc: func(ctx context.Context, cancel context.CancelFunc) error {
+				// Close the writer end of the pipe to begin processing
+				_ = stdoutWriter.Close()
+				defer func() {
+					// Close the reader on return to terminate the git command if necessary
+					_ = stdoutReader.Close()
+				}()
+				// Now scan the output from the command
+				scanner := bufio.NewScanner(stdoutReader)
+				for scanner.Scan() {
+					path := strings.TrimSpace(scanner.Text())
+					if len(path) == 0 {
+						continue
+					}
+					affectedFiles = append(affectedFiles, path)
+				}
+				return scanner.Err()
+			},
+		})
+	if err != nil {
+		log.Error("Unable to get changes files for commits from %s to %s in %s: %v", oldCommitID, newCommitID, repo.Path, err)
+	}
+
+	return affectedFiles, err
+}
+
+func GetFileSize(repo *Repository, newCommitID, fileName string, env []string) (int64, error) {
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		log.Error("Unable to create os.Pipe for %s", repo.Path)
+		return 0, err
+	}
+	defer func() {
+		_ = stdoutReader.Close()
+		_ = stdoutWriter.Close()
+	}()
+
+	var fileSize int64
+
+	// Run `git cat-file -s commitId:fileName` to get the file size of the commit
+	err = NewCommand(repo.Ctx, "cat-file", "-s").AddDynamicArguments(fmt.Sprintf("%s:%s", newCommitID, fileName)).
+		Run(&RunOpts{
+			Env:    env,
+			Dir:    repo.Path,
+			Stdout: stdoutWriter,
+			PipelineFunc: func(ctx context.Context, cancel context.CancelFunc) error {
+				// Close the writer end of the pipe to begin processing
+				_ = stdoutWriter.Close()
+				defer func() {
+					// Close the reader on return to terminate the git command if necessary
+					_ = stdoutReader.Close()
+				}()
+				// Now scan the output from the command
+				scanner := bufio.NewScanner(stdoutReader)
+				for scanner.Scan() {
+					size := strings.TrimSpace(scanner.Text())
+					if len(size) == 0 {
+						continue
+					}
+					fileSize, err = strconv.ParseInt(size, 10, 64)
+				}
+				return scanner.Err()
+			},
+		})
+	if err != nil {
+		log.Error("Unable to get file size of %s for commit %s in %s: %v", fileName, newCommitID, repo.Path, err)
+	}
+
+	return fileSize, err
+}
