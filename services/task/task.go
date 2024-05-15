@@ -57,13 +57,13 @@ func handler(items ...*admin_model.Task) []*admin_model.Task {
 }
 
 // MigrateRepository add migration repository to task
-func MigrateRepository(ctx context.Context, doer, u *user_model.User, opts base.MigrateOptions) error {
+func MigrateRepository(ctx context.Context, doer, u *user_model.User, opts base.MigrateOptions) (*admin_model.Task, error) {
 	task, err := CreateMigrateTask(ctx, doer, u, opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return taskQueue.Push(task)
+	return task, taskQueue.Push(task)
 }
 
 // CreateMigrateTask creates a migrate task

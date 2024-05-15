@@ -1037,6 +1037,9 @@ func Routes() *web.Route {
 		// requires repo scope
 		m.Combo("/repositories/{id}", reqToken(), tokenRequiresScopes(auth_model.AccessTokenScopeCategoryRepository)).Get(repo.GetByID)
 
+		m.Group("user", func() {
+			m.Get("/task/{id}", user.TaskStatus)
+		})
 		// Repos (requires repo scope)
 		m.Group("/repos", func() {
 			m.Get("/search", repo.Search)
