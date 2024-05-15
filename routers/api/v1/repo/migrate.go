@@ -4,8 +4,6 @@
 package repo
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,14 +11,10 @@ import (
 	"code.gitea.io/gitea/models"
 	"code.gitea.io/gitea/models/db"
 	"code.gitea.io/gitea/models/organization"
-	"code.gitea.io/gitea/models/perm"
-	access_model "code.gitea.io/gitea/models/perm/access"
 	repo_model "code.gitea.io/gitea/models/repo"
 	user_model "code.gitea.io/gitea/models/user"
 	"code.gitea.io/gitea/modules/context"
-	"code.gitea.io/gitea/modules/graceful"
 	"code.gitea.io/gitea/modules/lfs"
-	"code.gitea.io/gitea/modules/log"
 	base "code.gitea.io/gitea/modules/migration"
 	"code.gitea.io/gitea/modules/setting"
 	api "code.gitea.io/gitea/modules/structs"
@@ -29,8 +23,7 @@ import (
 	"code.gitea.io/gitea/services/convert"
 	"code.gitea.io/gitea/services/forms"
 	"code.gitea.io/gitea/services/migrations"
-	notify_service "code.gitea.io/gitea/services/notify"
-	repo_service "code.gitea.io/gitea/services/repository"
+	"code.gitea.io/gitea/services/task"
 )
 
 // Migrate migrate remote git repository to gitea
@@ -170,49 +163,19 @@ func Migrate(ctx *context.APIContext) {
 		opts.Releases = false
 	}
 
-	repo, err := repo_service.CreateRepositoryDirectly(ctx, ctx.Doer, repoOwner, repo_service.CreateRepoOptions{
-		Name:           opts.RepoName,
-		Description:    opts.Description,
-		OriginalURL:    form.CloneAddr,
-		GitServiceType: gitServiceType,
-		IsPrivate:      opts.Private,
-		IsMirror:       opts.Mirror,
-		Status:         repo_model.RepositoryBeingMigrated,
-	})
+	err = repo_model.CheckCreateRepository(ctx, ctx.Doer, repoOwner, opts.RepoName, false)
 	if err != nil {
 		handleMigrateError(ctx, repoOwner, remoteAddr, err)
 		return
 	}
 
-	opts.MigrateToRepoID = repo.ID
-
-	defer func() {
-		if e := recover(); e != nil {
-			var buf bytes.Buffer
-			fmt.Fprintf(&buf, "Handler crashed with error: %v", log.Stack(2))
-
-			err = errors.New(buf.String())
-		}
-
-		if err == nil {
-			notify_service.MigrateRepository(ctx, ctx.Doer, repoOwner, repo)
-			return
-		}
-
-		if repo != nil {
-			if errDelete := repo_service.DeleteRepositoryDirectly(ctx, ctx.Doer, repo.ID); errDelete != nil {
-				log.Error("DeleteRepository: %v", errDelete)
-			}
-		}
-	}()
-
-	if repo, err = migrations.MigrateRepository(graceful.GetManager().HammerContext(), ctx.Doer, repoOwner.Name, opts, nil); err != nil {
+	task, err := task.MigrateRepository(ctx, ctx.Doer, repoOwner, opts)
+	if err != nil {
 		handleMigrateError(ctx, repoOwner, remoteAddr, err)
 		return
 	}
 
-	log.Trace("Repository migrated: %s/%s", repoOwner.Name, form.RepoName)
-	ctx.JSON(http.StatusCreated, convert.ToRepo(ctx, repo, access_model.Permission{AccessMode: perm.AccessModeAdmin}))
+	ctx.JSON(http.StatusCreated, task)
 }
 
 func handleMigrateError(ctx *context.APIContext, repoOwner *user_model.User, remoteAddr string, err error) {
